@@ -1,22 +1,26 @@
-# app/auth/redis.py
-import aioredis
-from app.core.config import get_settings
+from redis import asyncio as aioredis
+from app.core.config import settings
 
-settings = get_settings()
+redis_client = None
 
-async def get_redis():
-    if not hasattr(get_redis, "redis"):
-        get_redis.redis = await aioredis.from_url(
-            settings.REDIS_URL or "redis://localhost"
+async def get_redis_client():
+    """Get or create Redis client"""
+    global redis_client
+    if redis_client is None:
+        redis_client = await aioredis.from_url(
+            settings.REDIS_URL,
+            encoding="utf-8",
+            decode_responses=True
         )
-    return get_redis.redis
+    return redis_client
 
-async def add_to_blacklist(jti: str, exp: int):
-    """Add a token's JTI to the blacklist"""
-    redis = await get_redis()
-    await redis.set(f"blacklist:{jti}", "1", ex=exp)
+async def add_to_blacklist(token: str, expiry: int):
+    """Add token to blacklist with expiration"""
+    client = await get_redis_client()
+    await client.setex(f"blacklist:{token}", expiry, "1")
 
-async def is_blacklisted(jti: str) -> bool:
-    """Check if a token's JTI is blacklisted"""
-    redis = await get_redis()
-    return await redis.exists(f"blacklist:{jti}")
+async def is_blacklisted(token: str) -> bool:
+    """Check if token is blacklisted"""
+    client = await get_redis_client()
+    result = await client.get(f"blacklist:{token}")
+    return result is not None
